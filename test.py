@@ -1,15 +1,19 @@
-from torchvision.io import decode_image
 import pandas as pd
 import os
 import matplotlib.pyplot as plt
+from torchvision.io import decode_image
+from torchvision import datasets, transforms
 from torchvision.transforms import v2
-from torchvision import datasets
 from torch.utils.data import Dataset, DataLoader
+import torch.nn.functional as F
 import torch
+from torch import nn
 import numpy as np
+
 
 '''
 # 1. 张量
+
 data = [[1, 2], [3, 4]]
 x_data = torch.tensor(data)
 np_array = np.array(data)
@@ -83,7 +87,6 @@ print(f"n: {n}")
 
 '''
 # 2. 数据集与数据加载器
-'''
 
 training_data = datasets.FashionMNIST(
     root='data',
@@ -161,3 +164,79 @@ test_dataloader = DataLoader(test_data, batch_size=64, shuffle=True)
 
 # X, y = next(iter(train_dataloader))
 # print(X.shape, y.shape)
+'''
+
+
+'''
+3. 变换 (Transforms)
+
+ds = datasets.FashionMNIST(
+    root='data',
+    train=True,
+    download=True,
+    transform=v2.Compose([v2.ToImage(), v2.ToDtype(torch.float, scale=True)]),
+    target_transform=v2.Lambda(lambda y: F.one_hot(torch.tensor(y), num_classes=10).float())
+)
+'''
+
+'''
+4. 构建神经网络
+
+device = torch.accelerator.current_accelerator().type if torch.accelerator.is_available() else 'cpu'
+
+
+class NeuralNetwork(nn.Module):
+    def __init__(self):
+        super().__init__()
+        self.flatten = nn.Flatten()
+        self.linear_relu_stack = nn.Sequential(
+            nn.Linear(in_features=28*28, out_features=512),
+            nn.ReLU(),
+            nn.Linear(512, 256),
+            nn.ReLU(),
+            nn.Linear(256, 10),
+        )
+
+    def forward(self, x):
+        x = self.flatten(x)
+        logits = self.linear_relu_stack(x)
+        return logits
+
+
+model = NeuralNetwork().to(device)
+X = torch.rand(1, 28, 28, device=device)
+logits = model(X)  # scores
+# pred_probab = nn.Softmax(dim=1)(logits)
+softmax = nn.Softmax(1)
+pred_probab = softmax(logits)
+y_pred = pred_probab.argmax(1)
+
+input_image = torch.rand(3, 28, 28)
+flatten = nn.Flatten()
+flat_image = flatten(input_image)
+# print(flat_image.shape)  # (3, 784)
+
+layer1 = nn.Linear(in_features=784, out_features=20)
+hidden1 = layer1(flat_image)
+# print(layer1.weight.shape)  # (20, 784)
+# print(hidden1.shape)  # (3, 20)
+# print(f'Before ReLU: {hidden1}\n\n')
+hidden1 = nn.ReLU()(hidden1)
+# print(f'After ReLU: {hidden1}')
+
+seq_modules = nn.Sequential(
+    flatten,
+    layer1,
+    nn.ReLU(),
+    nn.Linear(20, 10),
+    softmax,
+)
+pred_prob = seq_modules(input_image)
+# print(pred_prob.shape)  # (3, 10)
+
+# print(f"Model structure: {model}\n\n")
+# for name, param in model.named_parameters():
+#     print(f"Layer: {name} | Size: {param.size()} | Values : {param[:2]} \n")
+# model.parameters()
+
+'''
