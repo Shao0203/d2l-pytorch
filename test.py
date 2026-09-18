@@ -11,8 +11,7 @@ from torch import nn
 import numpy as np
 
 
-'''
-# 1. 张量
+'''1. 张量
 
 data = [[1, 2], [3, 4]]
 x_data = torch.tensor(data)
@@ -85,8 +84,7 @@ print(f"n: {n}")
 '''
 
 
-'''
-# 2. 数据集与数据加载器
+'''2. 数据集与数据加载器
 
 training_data = datasets.FashionMNIST(
     root='data',
@@ -167,8 +165,7 @@ test_dataloader = DataLoader(test_data, batch_size=64, shuffle=True)
 '''
 
 
-'''
-3. 变换 (Transforms)
+'''3. 变换 (Transforms)
 
 ds = datasets.FashionMNIST(
     root='data',
@@ -179,8 +176,8 @@ ds = datasets.FashionMNIST(
 )
 '''
 
-'''
-4. 构建神经网络
+
+'''4. 构建神经网络
 
 device = torch.accelerator.current_accelerator().type if torch.accelerator.is_available() else 'cpu'
 
@@ -240,3 +237,129 @@ pred_prob = seq_modules(input_image)
 # model.parameters()
 
 '''
+
+
+'''5. 自动微分 (Autograd)
+
+x = torch.ones(5)
+y = torch.zeros(3)
+w = torch.randn(5, 3, requires_grad=True)
+b = torch.randn(3, requires_grad=True)
+z = torch.matmul(x, w) + b
+loss = torch.nn.functional.binary_cross_entropy_with_logits(z, y)
+loss.backward()  # calc gradients and save to w.grad and b.grad
+# print(w.grad, '\n', b.grad)
+# print(z.requires_grad)
+# print(z.grad)
+# print(loss)
+# print(f"Gradient function for z = {z.grad_fn}")
+# print(f"Gradient function for loss = {loss.grad_fn}")
+# print(z.grad)
+# print(x.requires_grad)  # False
+# print(y.requires_grad)  # False
+# print(z.requires_grad)  # True
+# print(w.requires_grad)  # True
+# print(b.requires_grad)  # True
+# with torch.no_grad():
+#     z = torch.matmul(x, w) + b
+# print(z.requires_grad)  # False
+
+# z = torch.matmul(x, w) + b
+# print(z.requires_grad)  # True
+# z_det = z.detach()
+# print(z_det.requires_grad)  # False
+# loss.backward()
+# print(w.grad, '\n', b.grad)
+# # print(z.requires_grad, z_det.requires_grad)
+
+
+# inp = torch.eye(4, 5, requires_grad=True)
+# out = (inp+1).pow(2).t()
+# out.backward(torch.ones_like(out), retain_graph=True)
+# print(f"First call\n{inp.grad}")
+# out.backward(torch.ones_like(out), retain_graph=True)
+# print(f"\nSecond call\n{inp.grad}")
+# inp.grad.zero_()
+# out.backward(torch.ones_like(out), retain_graph=True)
+# print(f"\nCall after zeroing gradients\n{inp.grad}")
+'''
+
+
+'''6. 优化模型参数
+'''
+training_data = datasets.FashionMNIST(
+    root='data',
+    train=True,
+    download=True,
+    transform=v2.Compose([v2.ToImage(), v2.ToDtype(torch.float, scale=True)]),
+)
+
+test_data = datasets.FashionMNIST(
+    root='data',
+    train=False,
+    download=True,
+    transform=v2.Compose([v2.ToImage(), v2.ToDtype(torch.float, scale=True)]),
+)
+
+
+class NeuralNetwork(nn.Module):
+    def __init__(self):
+        super().__init__()
+        self.flatten = nn.Flatten()
+        self.linear_relu_stack = nn.Sequential(
+            nn.Linear(784, 512),
+            nn.ReLU(),
+            nn.Linear(512, 512),
+            nn.ReLU(),
+            nn.Linear(512, 10),
+        )
+
+    def forward(self, x):
+        x = self.flatten(x)
+        logits = self.linear_relu_stack(x)
+        return logits
+
+
+def train_loop(dataloader, model, loss_fn, optimizer):
+    model.train()
+    size = len(dataloader.dataset)
+    for batch, (X, y) in enumerate(dataloader):
+        pred = model(X)
+        loss = loss_fn(pred, y)
+        loss.backward()
+        optimizer.step()
+        optimizer.zero_grad()
+
+        if batch % 100 == 0:
+            loss, current = loss.item(), (batch + 1) * len(X)
+            print(f'loss: {loss:>7f} [{current:>5d}/{size:>5d}]')
+
+
+def test_loop(dataloader, model, loss_fn):
+    model.eval()
+    size = len(dataloader.dataset)
+    num_batches = len(dataloader)
+    test_loss, correct = 0, 0
+
+    with torch.no_grad():
+        for X, y in dataloader:
+            pred = model(X)
+            test_loss += loss_fn(pred, y).item()
+            correct += (pred.argmax(1) == y).type(torch.float).sum().item()
+
+    test_loss /= num_batches
+    correct /= size
+    print(f'Test Error: \n Accuracy: {correct:.1%}, Avg loss: {test_loss:>8f} \n')
+
+
+train_dataloader = DataLoader(training_data, batch_size=64)
+test_dataloader = DataLoader(test_data, batch_size=64)
+model = NeuralNetwork()
+loss_fn = nn.CrossEntropyLoss()
+optimizer = torch.optim.SGD(model.parameters())
+
+for epoch in range(5):
+    print(f'Epoch {epoch+1}\n-------------------------------')
+    train_loop(train_dataloader, model, loss_fn, optimizer)
+    test_loop(test_dataloader, model, loss_fn)
+print('Done!')
